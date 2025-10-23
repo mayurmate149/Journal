@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@tailwind utilities;
+
+@keyframes pulse-bg-red {
+    0%, 100% { background-color: rgba(255, 200, 200, 0.3); }
+    50% { background-color: rgba(255, 0, 0, 0.8); }
+  }
+  
+  @keyframes pulse-bg-green {
+    0%, 100% { background-color: rgba(200, 255, 200, 0.3); }
+    50% { background-color: rgba(0, 255, 0, 0.8); }
+  }
+  
+  .animate-pulse-bg-red {
+    animation: pulse-bg-red 1.5s infinite ease-in-out;
+  }
+  
+  .animate-pulse-bg-green {
+    animation: pulse-bg-green 1.5s infinite ease-in-out;
+  }
+  

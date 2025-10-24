@@ -59,9 +59,17 @@ export default function ProTradeListPage() {
 
   useEffect(() => {
     fetchTrades();
-  }, [currentPage, statusFilter, selectedMonth, selectedYear]);
+  }, [currentPage, statusFilter, selectedMonth, selectedYear, rowsPerPage]);
 
+  const calculateMaxLoss = (trade: Trade) => {
+    if (!trade.capital_deployed) return 0;
+    return trade.capital_deployed * 0.01; // 1% of capital
+  };
 
+  const calculateMaxProfit = (trade: Trade) => {
+    if (!trade.capital_deployed) return 0;
+    return trade.capital_deployed * 0.02; // 2% of capital
+  };
 
   const formatDate = (value?: string) =>
     value ? new Date(value).toLocaleDateString() : "—";
@@ -275,13 +283,13 @@ export default function ProTradeListPage() {
                       className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-red" : ""
                         }`}
                     >
-                      {formatCurrency(trade.max_loss_allowed)}
+                      {formatCurrency(calculateMaxLoss(trade))}
                     </td>
                     <td
                       className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-green" : ""
                         }`}
                     >
-                      {formatCurrency(trade.expected_profit)}
+                     {formatCurrency(calculateMaxProfit(trade))}
                     </td>
 
                     <td className="px-3 py-2 text-right hidden xl:table-cell">{formatCurrency(trade.profit_booked)}</td>
@@ -387,3 +395,4 @@ export default function ProTradeListPage() {
     </div>
   );
 }
+

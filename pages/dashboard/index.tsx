@@ -1,15 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+
+import { fetchCapitalSummary } from "@/lib/fetchCapitalSummary";
+import type { CapitalSummary } from "@/types/capital";
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowUpIcon,
-  ArrowDownIcon,
-  ChartBarIcon,
-  CurrencyRupeeIcon,
-} from "@heroicons/react/24/outline";
-import {
-  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
@@ -17,13 +12,13 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
+  ResponsiveContainer,
 } from "recharts";
-import { JSX } from "react/jsx-runtime";
+import Analytics from "@/components/Analytics";
+import RiskCompliance from "@/components/RiskCompliance";
+import ProjectionPanel from "@/components/ProjectionPanel";
+import PsychologyAnalytics from "@/components/PsychologyAnalytics";
+import MonthlySummary from "@/components/MonthlySummary";
 
 interface DashboardData {
   year: number;
@@ -36,40 +31,105 @@ interface DashboardData {
   capitalDeployed: number;
 }
 
-const INITIAL_CAPITAL = 300000; // ₹3,00,000
-const COLORS = ["#4ade80", "#f87171"];
+type TabType = "overview" | "analytics" | "risk" | "growth" | "psychology" | "portfolio";
+
+const INITIAL_CAPITAL = 300000;
+
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  unit?: string;
+  icon?: string;
+  trend?: "up" | "down" | "neutral";
+  subtext?: string;
+  highlight?: boolean;
+}
+
+function StatCard({ title, value, unit, icon, trend, subtext, highlight }: StatCardProps) {
+  return (
+    <div
+      className={`rounded-lg shadow p-4 ${
+        highlight
+          ? "bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-300"
+          : "bg-white border border-gray-200"
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-gray-600 font-medium">{title}</p>
+          <p className={`text-2xl font-bold mt-1 ${highlight ? "text-green-700" : "text-gray-900"}`}>
+            {typeof value === "number" ? value.toLocaleString("en-IN") : value}
+            {unit && <span className="text-lg ml-1">{unit}</span>}
+          </p>
+          {subtext && <p className="text-xs text-gray-500 mt-1">{subtext}</p>}
+        </div>
+        {trend && (
+          <div className={`text-2xl ${trend === "up" ? "text-green-600" : trend === "down" ? "text-red-600" : "text-gray-400"}`}>
+            {trend === "up" ? "📈" : trend === "down" ? "📉" : "→"}
+          </div>
+        )}
+        {icon && <div className="text-3xl">{icon}</div>}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-6 py-3 font-medium border-b-2 transition-colors ${
+        active
+          ? "border-blue-600 text-blue-600 bg-blue-50"
+          : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 
 export default function DashboardPage() {
-  const [data, setData] = useState<DashboardData[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  // Capital summary for 1%/2% cards
+  const [capitalSummary, setCapitalSummary] = useState<CapitalSummary | null>(null);
+  const [capitalLoading, setCapitalLoading] = useState(true);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch("/api/dashboard", { signal: controller.signal });
-        const json = await res.json().catch(() => null);
-        if (!res.ok)
-          throw new Error(json?.message || res.statusText || `Request failed (${res.status})`);
-        if (Array.isArray(json)) setData(json);
-      } catch (err: any) {
-        if (err?.name !== "AbortError") {
-          setError(err?.message || "Failed to fetch dashboard data");
-          setData([]);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-    return () => controller.abort();
-  }, [refreshKey]);
+    fetchCapitalSummary().then((summary) => {
+      setCapitalSummary(summary);
+      setCapitalLoading(false);
+    });
+  }, []);
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [data, setData] = useState<DashboardData[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Process months
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/dashboard");
+      const json = await res.json();
+      if (Array.isArray(json)) setData(json);
+    } catch (err) {
+      console.error("Failed to fetch dashboard data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   const months = useMemo(() => {
     const sorted = data
       .map((r) => ({
@@ -82,7 +142,7 @@ export default function DashboardPage() {
         winCount: Number(r.winCount ?? 0),
         lossCount: Number(r.lossCount ?? 0),
         capitalDeployed: Number(r.capitalDeployed ?? 0),
-        totalTrades: (Number(r.winCount ?? 0) + Number(r.lossCount ?? 0)),
+        totalTrades: Number(r.winCount ?? 0) + Number(r.lossCount ?? 0),
       }))
       .sort((a, b) => (a.year === b.year ? a.month - b.month : a.year - b.year));
 
@@ -94,365 +154,756 @@ export default function DashboardPage() {
     });
   }, [data]);
 
-  const predictionData = useMemo(() => {
-    if (months.length < 2) return [];
-
-    // Use simple linear regression: y = a + b * x
-    const x = months.map((_, i) => i + 1);
-    const y = months.map((m) => m.totalEarn);
-
-    const n = x.length;
-    const sumX = x.reduce((s, xi) => s + xi, 0);
-    const sumY = y.reduce((s, yi) => s + yi, 0);
-    const sumXY = x.reduce((s, xi, i) => s + xi * y[i], 0);
-    const sumX2 = x.reduce((s, xi) => s + xi * xi, 0);
-
-    const b = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    const a = (sumY - b * sumX) / n;
-
-    const future = [n + 1, n + 2, n + 3].map((xi, idx) => ({
-      name: new Date(months[months.length - 1].year, months[months.length - 1].month - 1 + (idx + 1))
-        .toLocaleString("default", { month: "short", year: "2-digit" }),
-      actual: null,
-      predicted: a + b * xi,
-    }));
-
-    const actualData = months.map((m, i) => ({
-      name: new Date(m.year, m.month - 1).toLocaleString("default", { month: "short", year: "2-digit" }),
-      actual: m.totalEarn,
-      predicted: null,
-    }));
-
-    return [...actualData, ...future];
-  }, [months]);
-
-  // Compute stats for KPIs
   const stats = useMemo(() => {
-    const totalProfit = months.reduce((s, m) => s + m.profit, 0);
-    const totalLoss = months.reduce((s, m) => s + m.loss, 0);
-    const net = totalProfit - totalLoss;
-    const latestBalance = INITIAL_CAPITAL + net;
-
-    const totalWin = months.reduce((s, m) => s + m.winCount, 0);
-    const totalLossCount = months.reduce((s, m) => s + m.lossCount, 0);
-    const totalTrades = totalWin + totalLossCount;
-    const avgRoi = months.length
-      ? months.reduce((s, m) => s + m.roi, 0) / months.length
-      : 0;
-
-    const best = months.length
-      ? months.reduce((p, c) => (c.totalEarn > p.totalEarn ? c : p), months[0])
-      : null;
-    const worst = months.length
-      ? months.reduce((p, c) => (c.totalEarn < p.totalEarn ? c : p), months[0])
-      : null;
-
-    const winRate = totalTrades ? (totalWin / totalTrades) * 100 : 0;
-    const avgProfit = totalWin ? totalProfit / totalWin : 0;
-    const avgLoss = totalLossCount ? totalLoss / totalLossCount : 0;
+    const totalTrades = months.reduce((sum, m) => sum + m.totalTrades, 0);
+    const totalWins = months.reduce((sum, m) => sum + m.winCount, 0);
+    const totalLosses = months.reduce((sum, m) => sum + m.lossCount, 0);
+    const totalProfit = months.reduce((sum, m) => sum + m.profit, 0);
+    const totalLoss = months.reduce((sum, m) => sum + m.loss, 0);
+    const netProfit = totalProfit - totalLoss;
+    const finalBalance = months[months.length - 1]?.balance ?? INITIAL_CAPITAL;
+    const winRate = totalTrades > 0 ? (totalWins / totalTrades) * 100 : 0;
 
     return {
-      monthsCount: months.length,
+      totalTrades,
+      totalWins,
+      totalLosses,
       totalProfit,
       totalLoss,
-      net,
-      latestBalance,
-      totalWin,
-      totalLossCount,
-      totalTrades,
-      avgRoi,
-      best,
-      worst,
+      netProfit,
+      finalBalance,
       winRate,
-      avgProfit,
-      avgLoss,
     };
   }, [months]);
 
-  const formatMonth = (y: number, m: number) =>
-    new Date(y, m - 1).toLocaleString("default", {
-      month: "short",
-      year: "numeric",
-    });
+  const [recentTrades, setRecentTrades] = useState<Array<{
+    date: string;
+    symbol: string;
+    strategy: string;
+    pnl: number;
+    isWin: boolean;
+  }>>([]);
 
-  const formatCurrency = (n: number) =>
-    `₹${n.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+  interface StrategyStats {
+    name: string;
+    winRate: number;
+    profit: number;
+  }
 
-  const kpiCard = (
-    label: string,
-    value: string | number,
-    icon?: JSX.Element,
-    color?: string
-  ) => (
-    <div
-      className={`p-5 bg-gradient-to-br rounded-xl shadow-lg flex flex-col items-center justify-center gap-2 hover:scale-105 transition transform ${color}`}
-    >
-      {icon && <div className="w-8 h-8">{icon}</div>}
-      <div className="text-xs text-slate-200">{label}</div>
-      <div className="text-2xl font-bold text-white">{value}</div>
-    </div>
-  );
+  const [tradeStats, setTradeStats] = useState<{
+    winRate: number;
+    avgWinLoss: number;
+    avgWin: number;
+    avgLoss: number;
+    bestMonth: number;
+    profitFactor: number;
+    totalTrades: number;
+    totalProfit: number;
+    totalLoss: number;
+    netProfit: number;
+    maxConsecutiveWins: number;
+    medianWin: number;
+    medianLoss: number;
+    largestWin: number;
+    largestLoss: number;
+    maxDrawdown: number;
+    recoveryFactor: number;
+    avgMonthlyROI: number;
+    avgWeeklyROI: number;
+    monthsTraded: number;
+    maxMonthlyROI: number;
+    minMonthlyROI: number;
+    maxWeeklyROI: number;
+    minWeeklyROI: number;
+    sharpeRatio: number;
+    calmarRatio: number;
+    sortinoRatio: number;
+    annualizedReturn: number;
+    monthWinRate: number;
+    expectancy: number;
+    monthlyROIStdDev: number;
+    bestStrategy: StrategyStats | null;
+    worstStrategy: StrategyStats | null;
+  }>({
+    winRate: 0,
+    avgWinLoss: 0,
+    avgWin: 0,
+    avgLoss: 0,
+    bestMonth: 0,
+    profitFactor: 0,
+    totalTrades: 0,
+    totalProfit: 0,
+    totalLoss: 0,
+    netProfit: 0,
+    maxConsecutiveWins: 0,
+    medianWin: 0,
+    medianLoss: 0,
+    largestWin: 0,
+    largestLoss: 0,
+    maxDrawdown: 0,
+    recoveryFactor: 0,
+    avgMonthlyROI: 0,
+    avgWeeklyROI: 0,
+    monthsTraded: 0,
+    maxMonthlyROI: 0,
+    minMonthlyROI: 0,
+    maxWeeklyROI: 0,
+    minWeeklyROI: 0,
+    sharpeRatio: 0,
+    calmarRatio: 0,
+    sortinoRatio: 0,
+    annualizedReturn: 0,
+    monthWinRate: 0,
+    expectancy: 0,
+    monthlyROIStdDev: 0,
+    bestStrategy: null,
+    worstStrategy: null,
+  });
+
+  useEffect(() => {
+    const fetchRecentTrades = async () => {
+      try {
+        const res = await fetch("/api/dashboard/recent-trades");
+        interface TradeData {
+          date: string;
+          symbol: string;
+          strategy: string;
+          pnl: number;
+          isWin: boolean;
+        }
+        const trades: TradeData[] = await res.json();
+        setRecentTrades(
+          trades.slice(0, 5).map((trade: TradeData) => ({
+            date: new Date(trade.date).toLocaleDateString("en-IN", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+            symbol: trade.symbol,
+            strategy: trade.strategy,
+            pnl: trade.pnl,
+            isWin: trade.isWin,
+          }))
+        );
+      } catch (error) {
+        console.error("Failed to fetch recent trades:", error);
+      }
+    };
+    fetchRecentTrades();
+  }, []);
+
+  useEffect(() => {
+    const fetchTradeStats = async () => {
+      try {
+        const res = await fetch("/api/dashboard/trade-stats");
+        const stats = await res.json();
+        setTradeStats(stats);
+      } catch (error) {
+        console.error("Failed to fetch trade statistics:", error);
+      }
+    };
+    fetchTradeStats();
+  }, []);
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Mayur Trading Journal</h1>
-        <button
-          onClick={() => setRefreshKey((k) => k + 1)}
-          className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 transition"
-        >
-          Refresh
-        </button>
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <h1 className="text-3xl font-bold text-gray-900">Trading Dashboard</h1>
+          <p className="text-gray-600 mt-1">Real-time insights and portfolio analysis</p>
+        </div>
       </div>
 
-      {/* Primary KPIs */}
-      <section className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        {kpiCard(
-          "Trade Months",
-          stats.monthsCount,
-          <ChartBarIcon className="w-6 h-6 text-white" />,
-          "from-blue-500 to-blue-700"
-        )}
-        {kpiCard(
-          "Net P&L",
-          formatCurrency(stats.net),
-          stats.net >= 0 ? (
-            <ArrowUpIcon className="w-6 h-6 text-white" />
-          ) : (
-            <ArrowDownIcon className="w-6 h-6 text-white" />
-          ),
-          stats.net >= 0
-            ? "from-green-400 to-green-600"
-            : "from-red-400 to-red-600"
-        )}
-        {kpiCard(
-          "Latest Balance",
-          formatCurrency(stats.latestBalance),
-          <CurrencyRupeeIcon className="w-6 h-6 text-white" />,
-          "from-purple-400 to-purple-600"
-        )}
-        {kpiCard(
-          "Avg ROI / Month",
-          `${stats.avgRoi.toFixed(2)}%`,
-          <ChartBarIcon className="w-6 h-6 text-white" />,
-          "from-indigo-400 to-indigo-600"
-        )}
-      </section>
+      {/* Tab Navigation */}
+      <div className="bg-white border-b border-gray-200 sticky top-16 z-30">
+        <div className="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto">
+          <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
+            📊 Overview
+          </TabButton>
+          <TabButton active={activeTab === "analytics"} onClick={() => setActiveTab("analytics")}>
+            📈 Trading Analytics
+          </TabButton>
+          <TabButton active={activeTab === "risk"} onClick={() => setActiveTab("risk")}>
+            🛡️ Risk Management
+          </TabButton>
+          <TabButton active={activeTab === "psychology"} onClick={() => setActiveTab("psychology")}>
+            🧠 Psychology & Behavior
+          </TabButton>
+          <TabButton active={activeTab === "growth"} onClick={() => setActiveTab("growth")}>
+            🚀 Growth Projections
+          </TabButton>
+          <TabButton active={activeTab === "portfolio"} onClick={() => setActiveTab("portfolio")}>
+            🎯 Portfolio Planner
+          </TabButton>
+        </div>
+      </div>
 
-      {/* Secondary KPIs */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {kpiCard(
-          "Total Wins",
-          stats.totalWin,
-          <ArrowUpIcon className="w-6 h-6 text-white" />,
-          "from-green-500 to-green-700"
-        )}
-        {kpiCard(
-          "Total Losses",
-          stats.totalLossCount,
-          <ArrowDownIcon className="w-6 h-6 text-white" />,
-          "from-red-500 to-red-700"
-        )}
-        {kpiCard(
-          "Total Trades",
-          stats.totalTrades,
-          <ChartBarIcon className="w-6 h-6 text-white" />,
-          "from-yellow-400 to-yellow-600"
-        )}
-      </section>
+      {/* Content Area */}
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* OVERVIEW TAB */}
+        {activeTab === "overview" && (
+          <div className="space-y-8 animate-fadeIn">
+            {/* Quick Stats */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900">Quick Overview</h2>
+                <button
+                  onClick={fetchData}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 transition text-sm"
+                  disabled={loading}
+                  title="Refresh dashboard data"
+                >
+                  {loading ? (
+                    <span className="animate-spin">🔄</span>
+                  ) : (
+                    <span>🔄</span>
+                  )}
+                  Refresh
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard
+                  title="Current Capital"
+                  value={`₹${stats.finalBalance.toLocaleString("en-IN")}`}
+                  icon="💰"
+                  highlight={true}
+                  subtext={undefined}
+                />
+                {capitalLoading ? (
+                  <div className="col-span-2 flex items-center justify-center text-gray-400">Loading risk cards...</div>
+                ) : capitalSummary ? (
+                  <>
+                    <div className="rounded-lg shadow p-4 bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-300">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-sm text-red-700 font-medium">1% Loss Limit</p>
+                          <p className="text-2xl font-bold mt-1 text-red-900">
+                            ₹{capitalSummary.maxLossPerTrade.toLocaleString("en-IN")}
+                          </p>
+                          <p className="text-xs text-red-600 mt-1">Max loss per trade (1% of capital)</p>
+                        </div>
+                        <div className="text-3xl">🛑</div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg shadow p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-sm text-blue-700 font-medium">2% Profit Target</p>
+                          <p className="text-2xl font-bold mt-1 text-blue-900">
+                            ₹{capitalSummary.maxProfitPerTrade.toLocaleString("en-IN")}
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">Target profit per trade (2% of capital)</p>
+                        </div>
+                        <div className="text-3xl">🎯</div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="col-span-2 flex items-center justify-center text-gray-400">No capital data</div>
+                )}
+                <StatCard
+                  title="Total Trades"
+                  value={stats.totalTrades}
+                  icon="�"
+                  trend="neutral"
+                  subtext="Lifetime trades"
+                />
+              </div>
+            </div>
 
-      {/* Highlights */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        <div className="p-4 bg-green-50 border-l-4 border-green-500 rounded shadow flex flex-col">
-          <h4 className="text-sm font-semibold text-green-800 mb-1">Best Month</h4>
-          <div className="text-lg font-bold text-green-700">
-            {stats.best
-              ? `${formatMonth(stats.best.year, stats.best.month)} (${formatCurrency(
-                stats.best.totalEarn
-              )})`
-              : "—"}
+            {/* Monthly P&L Chart */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly P&L Trend</h3>
+              {months.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={months}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey={(m) => `${m.month}/${m.year}`} />
+                    <YAxis />
+                    <Tooltip formatter={(v: number) => `₹${v.toLocaleString("en-IN")}`} />
+                    <Legend />
+                    <Bar dataKey="profit" fill="#4ade80" name="Profit" />
+                    <Bar dataKey="loss" fill="#f87171" name="Loss" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[300px] flex items-center justify-center text-gray-500">
+                  No data available
+                </div>
+              )}
+            </div>
+
+            {/* Monthly Summary Table */}
+            <MonthlySummary data={data} loading={loading} />
+
+            {/* Recent Trades & Progress */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Recent Trades */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Trades</h3>
+                <div className="space-y-3">
+                  {recentTrades.length > 0 ? (
+                    recentTrades.map((trade, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                        <div>
+                          <p className="font-medium text-gray-900">{trade.symbol}</p>
+                          <p className="text-xs text-gray-500">{trade.date} • {trade.strategy}</p>
+                        </div>
+                        <p className={`font-bold ${trade.isWin ? "text-green-600" : "text-red-600"}`}>
+                          {trade.isWin ? "+" : ""}₹{Math.abs(trade.pnl).toLocaleString("en-IN")}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      Loading recent trades...
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress to Target */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">🏆 Milestone Progress</h3>
+                <div className="space-y-3">
+                  {Array.from({ length: 5 }, (_, i) => {
+                    const target = (i + 1) * 500000;
+                    const label = `₹${((target / 100000).toFixed(0))} Lakh`;
+                    const achieved = stats.finalBalance >= target;
+                    const isInProgress = !achieved && stats.finalBalance > (i === 0 ? 0 : i * 500000);
+                    const progress = Math.min((stats.finalBalance / target) * 100, 100);
+                    const remaining = Math.max(target - stats.finalBalance, 0);
+                    return (
+                      <div key={i} className="flex gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className={`w-10 h-10 rounded-full ${achieved ? "bg-green-100 text-green-700" : isInProgress ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"} flex items-center justify-center font-bold`}>
+                            {achieved ? "✓" : isInProgress ? "◐" : "○"}
+                          </div>
+                          {i < 4 && <div className="w-1 h-12 bg-gray-200 my-1"></div>}
+                        </div>
+                        <div className="pt-2 flex-1">
+                          <p className="font-medium text-gray-900">{label}</p>
+                          <p className="text-xs text-gray-600">
+                            {achieved ? "Achieved" : isInProgress ? `In Progress • ₹${remaining.toLocaleString("en-IN")} left` : `Planned • ₹${remaining.toLocaleString("en-IN")} left`}
+                          </p>
+                          {isInProgress && (
+                            <div className="w-full bg-gray-200 rounded h-1 mt-2">
+                              <div className="bg-blue-500 h-1 rounded" style={{ width: `${progress}%` }}></div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Key Insights */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow p-6 border border-blue-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">📊 Key Insights & Performance Metrics</h3>
+              
+              {/* Core Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 pb-6 border-b border-blue-200">
+                <div className="bg-white rounded p-4">
+                  <p className="font-semibold text-gray-900 text-sm">Total Return</p>
+                  <p className="text-green-600 mt-2 text-xl font-bold">
+                    +{((stats.netProfit / INITIAL_CAPITAL) * 100).toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">₹{stats.netProfit.toLocaleString("en-IN")}</p>
+                </div>
+                <div className="bg-white rounded p-4">
+                  <p className="font-semibold text-gray-900 text-sm">Win/Loss Ratio</p>
+                  <p className="text-blue-600 mt-2 text-xl font-bold">{tradeStats.avgWinLoss?.toFixed(2)}x</p>
+                  <p className="text-xs text-gray-500 mt-1">{tradeStats.winRate?.toFixed(1)}% Win Rate</p>
+                </div>
+                <div className="bg-white rounded p-4">
+                  <p className="font-semibold text-gray-900 text-sm">Profit Factor</p>
+                  <p className="text-indigo-600 mt-2 text-xl font-bold">{tradeStats.profitFactor?.toFixed(2)}</p>
+                  <p className="text-xs text-gray-500 mt-1">Total Profit / Loss Ratio</p>
+                </div>
+              </div>
+
+              {/* Trading Efficiency */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6 pb-6 border-b border-blue-200">
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Avg Win</p>
+                  <p className="text-green-600 mt-1 font-bold">₹{tradeStats.avgWin?.toLocaleString("en-IN")}</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Avg Loss</p>
+                  <p className="text-red-600 mt-1 font-bold">₹{tradeStats.avgLoss?.toLocaleString("en-IN")}</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Best Month</p>
+                  <p className="text-blue-600 mt-1 font-bold">₹{tradeStats.bestMonth?.toLocaleString("en-IN")}</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Consecutive Wins</p>
+                  <p className="text-indigo-600 mt-1 font-bold">{tradeStats.maxConsecutiveWins || 0}</p>
+                </div>
+              </div>
+
+              {/* Advanced Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6 pb-6 border-b border-blue-200">
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Largest Win</p>
+                  <p className="text-green-600 mt-1 font-bold">₹{tradeStats.largestWin?.toLocaleString("en-IN")}</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Largest Loss</p>
+                  <p className="text-red-600 mt-1 font-bold">₹{Math.abs(tradeStats.largestLoss || 0).toLocaleString("en-IN")}</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Max Drawdown</p>
+                  <p className="text-orange-600 mt-1 font-bold">₹{tradeStats.maxDrawdown?.toLocaleString("en-IN")}</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Recovery Factor</p>
+                  <p className={`mt-1 font-bold ${(tradeStats.recoveryFactor || 0) > 1 ? 'text-green-600' : 'text-yellow-600'}`}>
+                    {tradeStats.recoveryFactor?.toFixed(2)}x
+                  </p>
+                </div>
+              </div>
+
+              {/* ROI Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 pb-6 border-b border-blue-200">
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded p-4 border border-green-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900 text-xs uppercase">Avg Monthly ROI</p>
+                      <p className="text-green-700 mt-2 text-xl font-bold">{tradeStats.avgMonthlyROI?.toFixed(2)}%</p>
+                      <p className="text-xs text-gray-600 mt-1">Over {tradeStats.monthsTraded} months</p>
+                    </div>
+                    <span className="text-3xl">📈</span>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded p-4 border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900 text-xs uppercase">Avg Weekly ROI</p>
+                      <p className="text-blue-700 mt-2 text-xl font-bold">{tradeStats.avgWeeklyROI?.toFixed(2)}%</p>
+                      <p className="text-xs text-gray-600 mt-1">Range: {tradeStats.minWeeklyROI?.toFixed(2)}% to {tradeStats.maxWeeklyROI?.toFixed(2)}%</p>
+                    </div>
+                    <span className="text-3xl">📊</span>
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded p-4 border border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900 text-xs uppercase">Annualized Return</p>
+                      <p className="text-purple-700 mt-2 text-xl font-bold">{tradeStats.annualizedReturn?.toFixed(2)}%</p>
+                      <p className="text-xs text-gray-600 mt-1">Projected yearly</p>
+                    </div>
+                    <span className="text-3xl">🎯</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Risk-Adjusted Returns */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 pb-6 border-b border-blue-200">
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Sharpe Ratio</p>
+                  <p className={`mt-2 text-lg font-bold ${(tradeStats.sharpeRatio || 0) > 1 ? 'text-green-600' : (tradeStats.sharpeRatio || 0) > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {tradeStats.sharpeRatio?.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">Risk-adjusted returns (higher better)</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Calmar Ratio</p>
+                  <p className={`mt-2 text-lg font-bold ${(tradeStats.calmarRatio || 0) > 1 ? 'text-green-600' : (tradeStats.calmarRatio || 0) > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {tradeStats.calmarRatio?.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">Return vs Max Drawdown</p>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <p className="font-semibold text-gray-900 text-xs uppercase">Sortino Ratio</p>
+                  <p className={`mt-2 text-lg font-bold ${(tradeStats.sortinoRatio || 0) > 1 ? 'text-green-600' : (tradeStats.sortinoRatio || 0) > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {tradeStats.sortinoRatio?.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">Downside risk-adjusted</p>
+                </div>
+              </div>
+
+              {/* Strategy & Risk Insights */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="font-semibold text-gray-900 text-sm">🏆 Best Strategy</p>
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Top Performer</span>
+                  </div>
+                  {tradeStats.bestStrategy ? (
+                    <div>
+                      <p className="text-lg font-bold text-green-600">{tradeStats.bestStrategy.name}</p>
+                      <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                        <div>
+                          <p className="text-gray-600">Win Rate</p>
+                          <p className="font-bold text-gray-900">{tradeStats.bestStrategy.winRate}%</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">Profit</p>
+                          <p className="font-bold text-green-600">₹{tradeStats.bestStrategy.profit?.toLocaleString("en-IN")}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">No strategy data</p>
+                  )}
+                </div>
+
+                <div className="bg-white rounded p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="font-semibold text-gray-900 text-sm">⚠️ Needs Improvement</p>
+                    <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">Focus Area</span>
+                  </div>
+                  {tradeStats.worstStrategy ? (
+                    <div>
+                      <p className="text-lg font-bold text-red-600">{tradeStats.worstStrategy.name}</p>
+                      <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                        <div>
+                          <p className="text-gray-600">Win Rate</p>
+                          <p className="font-bold text-gray-900">{tradeStats.worstStrategy.winRate}%</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">Loss</p>
+                          <p className="font-bold text-red-600">₹{Math.abs(tradeStats.worstStrategy.profit || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">No strategy data</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Items */}
+              <div className="mt-6 pt-6 border-t border-blue-200">
+                <p className="font-semibold text-gray-900 mb-3 text-sm">💡 Recommended Actions:</p>
+                <ul className="space-y-2 text-xs text-gray-700">
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-600 mt-0.5">→</span>
+                    <span>{tradeStats.avgWinLoss > 1.2 ? "✓ Win/Loss ratio is strong. Focus on increasing win rate." : "Improve your Win/Loss ratio - aim for 1.2x or higher"}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-600 mt-0.5">→</span>
+                    <span>{tradeStats.maxDrawdown > stats.netProfit ? "⚠️ Max drawdown exceeds profits. Consider tighter risk management." : "✓ Drawdown management is good"}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-600 mt-0.5">→</span>
+                    <span>{tradeStats.profitFactor > 1.5 ? "✓ Profit factor is excellent. Maintain your edge." : "Improve profit factor - focus on reducing losses"}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-600 mt-0.5">→</span>
+                    <span>Replicate {tradeStats.bestStrategy?.name} success - highest profit generator</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-600 mt-0.5">→</span>
+                    <span>Review and optimize {tradeStats.worstStrategy?.name} - review why it underperforms</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded shadow flex flex-col">
-          <h4 className="text-sm font-semibold text-red-800 mb-1">Worst Month</h4>
-          <div className="text-lg font-bold text-red-600">
-            {stats.worst
-              ? `${formatMonth(stats.worst.year, stats.worst.month)} (${formatCurrency(
-                stats.worst.totalEarn
-              )})`
-              : "—"}
+        )}
+
+        {/* ANALYTICS TAB */}
+        {activeTab === "analytics" && (
+          <div className="space-y-8 animate-fadeIn">
+            <Analytics />
           </div>
-        </div>
-      </section>
+        )}
 
-      {/* Month-wise Table */}
-      <section className="overflow-auto bg-white border rounded shadow">
-        <table className="min-w-full text-sm divide-y divide-gray-200">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="p-3 text-left">Month</th>
-              <th className="p-3 text-right">Profit</th>
-              <th className="p-3 text-right">Loss</th>
-              <th className="p-3 text-right">Net</th>
-              <th className="p-3 text-right">Wins</th>
-              <th className="p-3 text-right">Losses</th>
-              <th className="p-3 text-right">Total Trades</th>
-              <th className="p-3 text-right">ROI</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {months.length === 0 && !loading ? (
-              <tr>
-                <td colSpan={8} className="p-6 text-center text-slate-500">
-                  No monthly data
-                </td>
-              </tr>
-            ) : (
-              months.map((m) => {
-                const n = m.totalEarn;
-                const positive = n >= 0;
-                return (
-                  <tr key={`${m.year}-${m.month}`} className="hover:bg-gray-50 transition">
-                    <td className="p-3 font-medium">{formatMonth(m.year, m.month)}</td>
-                    <td className="p-3 text-right text-green-600">
-                      {formatCurrency(m.profit)}
-                    </td>
-                    <td className="p-3 text-right text-red-600">
-                      {formatCurrency(m.loss)}
-                    </td>
-                    <td
-                      className={`p-3 text-right font-bold ${positive ? "text-green-700" : "text-red-600"
-                        }`}
-                    >
-                      {formatCurrency(n)}
-                    </td>
-                    <td className="p-3 text-right text-green-600">{m.winCount}</td>
-                    <td className="p-3 text-right text-red-600">{m.lossCount}</td>
-                    <td className="p-3 text-right">{m.totalTrades}</td>
-                    <td className="p-3 text-right">{m.roi.toFixed(2)}%</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </section>
+        {/* RISK MANAGEMENT TAB */}
+        {activeTab === "risk" && (
+          <div className="space-y-8 animate-fadeIn">
+            <RiskCompliance />
+          </div>
+        )}
 
-      {/* Charts */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        <div className="bg-white p-4 rounded shadow">
-          <h4 className="text-sm font-semibold mb-2">Monthly Profit vs Loss</h4>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={months}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={(m) => formatMonth(m.year, m.month)} />
-              <YAxis />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} />
-              <Legend />
-              <Bar dataKey="profit" fill="#4ade80" />
-              <Bar dataKey="loss" fill="#f87171" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {/* PSYCHOLOGY & BEHAVIOR TAB */}
+        {activeTab === "psychology" && (
+          <div className="space-y-8 animate-fadeIn">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">🧠 Psychology & Behavioral Analytics</h2>
+              <p className="text-gray-600 mb-6">Track emotional patterns, discipline levels, and psychological factors affecting your trades</p>
+            </div>
+            <PsychologyAnalytics />
+          </div>
+        )}
 
-        <div className="bg-white p-4 rounded shadow">
-          <h4 className="text-sm font-semibold mb-2">Monthly ROI (%)</h4>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={months}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={(m) => formatMonth(m.year, m.month)} />
-              <YAxis />
-              <Tooltip formatter={(v: number) => `${v.toFixed(2)}%`} />
-              <Line type="monotone" dataKey="roi" stroke="#3b82f6" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {/* GROWTH PROJECTIONS TAB */}
+        {activeTab === "growth" && (
+          <div className="space-y-8 animate-fadeIn">
+            <ProjectionPanel />
+          </div>
+        )}
 
-        <div className="bg-white p-4 rounded shadow">
-          <h4 className="text-sm font-semibold mb-2">Wins vs Losses</h4>
-          <ResponsiveContainer width="100%" height={250}>
-            <PieChart>
-              <Pie
-                data={[
-                  { name: "Wins", value: stats.totalWin },
-                  { name: "Losses", value: stats.totalLossCount },
-                ]}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                label
-              >
-                {COLORS.map((color, i) => (
-                  <Cell key={i} fill={color} />
-                ))}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+        {/* PORTFOLIO PLANNER TAB */}
+        {activeTab === "portfolio" && (
+          <div className="space-y-8 animate-fadeIn">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Portfolio Planner</h2>
 
-        <div className="bg-white p-4 rounded shadow">
-          <h4 className="text-sm font-semibold mb-2">Cumulative Balance</h4>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart
-              data={months.map((m, i) => {
-                const cumulative =
-                  INITIAL_CAPITAL +
-                  months.slice(0, i + 1).reduce((s, x) => s + x.totalEarn, 0);
-                return { ...m, cumulative };
-              })}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={(m) => formatMonth(m.year, m.month)} />
-              <YAxis />
-              <Tooltip formatter={(v: number) => formatCurrency(v)} />
-              <Line type="monotone" dataKey="cumulative" stroke="#facc15" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
+              {/* Goals */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">🎯 Financial Goals</h3>
+                  <div className="space-y-4">
+                    {stats && [
+                      { 
+                        goal: "₹50 Lakhs", 
+                        timeframe: "Initial Target", 
+                        achieved: stats.finalBalance >= 5000000,
+                        current: stats.finalBalance
+                      },
+                      { 
+                        goal: "₹1 Crore", 
+                        timeframe: "Primary Target", 
+                        achieved: stats.finalBalance >= 10000000,
+                        current: stats.finalBalance
+                      },
+                      { 
+                        goal: "₹2 Crore", 
+                        timeframe: "Long Term", 
+                        achieved: stats.finalBalance >= 20000000,
+                        current: stats.finalBalance
+                      },
+                      { 
+                        goal: "Monthly ₹2L income", 
+                        timeframe: "Income Target", 
+                        achieved: (stats.netProfit / 12) >= 200000,
+                        current: (stats.netProfit / 12)
+                      },
+                    ].map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                        <div>
+                          <p className="font-medium text-gray-900">{item.goal}</p>
+                          <p className="text-xs text-gray-500">{item.timeframe}</p>
+                        </div>
+                        <span className={`text-lg ${item.achieved ? "✅" : "⏳"}`}></span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-      {/* Trade Quality Metrics */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-        <div className="p-4 bg-gradient-to-br from-green-400 to-green-600 text-white rounded shadow">
-          <div className="text-sm">Win Rate</div>
-          <div className="text-xl font-bold">{stats.winRate.toFixed(2)}%</div>
-        </div>
-        <div className="p-4 bg-gradient-to-br from-blue-400 to-blue-600 text-white rounded shadow">
-          <div className="text-sm">Avg Profit / Trade</div>
-          <div className="text-xl font-bold">{formatCurrency(stats.avgProfit)}</div>
-        </div>
-        <div className="p-4 bg-gradient-to-br from-red-400 to-red-600 text-white rounded shadow">
-          <div className="text-sm">Avg Loss / Trade</div>
-          <div className="text-xl font-bold">{formatCurrency(stats.avgLoss)}</div>
-        </div>
-      </section>
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">📋 Action Items</h3>
+                  <div className="space-y-3">
+                    {[
+                      { title: "Improve Win Rate", desc: `Target: 55%+ (Current: ${stats.winRate.toFixed(1)}%)` },
+                      { title: "Increase Position Size", desc: "Scale up after 3 months of +2% weekly ROI" },
+                      { title: "Monthly Top-ups", desc: "Commit ₹70,000/month for compound growth" },
+                      { title: "Weekly Review", desc: "Every Sunday - analyze trades and update strategy" },
+                    ].map((item, idx) => (
+                      <div key={idx} className={`flex items-start gap-3 p-3 rounded border-l-4 ${["bg-blue-50 border-blue-500", "bg-yellow-50 border-yellow-500", "bg-purple-50 border-purple-500", "bg-green-50 border-green-500"][idx]}`}>
+                        <input type="checkbox" className="mt-1 cursor-pointer" defaultChecked={idx === 0} />
+                        <div>
+                          <p className="font-medium text-gray-900">{item.title}</p>
+                          <p className="text-xs text-gray-600">{item.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-      <section className="p-6 bg-white border rounded shadow">
-        <h2 className="text-lg font-semibold mb-4">📈 3-Month Net P&L Prediction</h2>
-        <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={predictionData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip formatter={(v) => `₹${Number(v)?.toFixed(2)}`} />
-            <Legend />
-            <Line type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} name="Actual P&L" />
-            <Line type="monotone" dataKey="predicted" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4 }} name="Predicted P&L" />
-          </LineChart>
-        </ResponsiveContainer>
-      </section>
+              {/* Milestones & Strategy */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">🏆 Milestones</h3>
+                  <div className="space-y-3">
+                    {[
+                      {
+                        label: "₹10 Lakhs",
+                        achieved: stats.finalBalance >= 1000000,
+                        target: 1000000,
+                        date: "Milestone 1",
+                      },
+                      {
+                        label: "₹25 Lakhs",
+                        achieved: stats.finalBalance >= 2500000,
+                        target: 2500000,
+                        date: "Milestone 2",
+                      },
+                      {
+                        label: "₹50 Lakhs",
+                        achieved: stats.finalBalance >= 5000000,
+                        target: 5000000,
+                        date: "Milestone 3",
+                      },
+                      {
+                        label: "₹1 Crore",
+                        achieved: stats.finalBalance >= 10000000,
+                        target: 10000000,
+                        date: "Milestone 4",
+                      },
+                      {
+                        label: "₹5 Crore",
+                        achieved: stats.finalBalance >= 50000000,
+                        target: 50000000,
+                        date: "Milestone 5",
+                      },
+                    ].map((item, idx) => {
+                      const isAchieved = item.achieved;
+                      const isInProgress = !isAchieved && stats.finalBalance > 0;
+                      const progress = (stats.finalBalance / item.target) * 100;
+                      return (
+                        <div key={idx} className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-10 h-10 rounded-full ${isAchieved ? "bg-green-100 text-green-700" : isInProgress ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"} flex items-center justify-center font-bold`}>
+                              {isAchieved ? "✓" : isInProgress ? "◐" : "○"}
+                            </div>
+                            {idx < 2 && <div className="w-1 h-12 bg-gray-200 my-1"></div>}
+                          </div>
+                          <div className="pt-2 flex-1">
+                            <p className="font-medium text-gray-900">{item.label}</p>
+                            <p className="text-xs text-gray-600">{isAchieved ? "Achieved" : isInProgress ? "In Progress" : "Planned"} • {item.date}</p>
+                            {isInProgress && <div className="w-full bg-gray-200 rounded h-1 mt-2"><div className="bg-blue-500 h-1 rounded" style={{ width: `${Math.min(progress, 100)}%` }}></div></div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
-      {error && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-800 rounded text-sm">
-          {error}
-        </div>
-      )}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">💡 Strategy Notes</h3>
+                  <div className="space-y-3 text-sm">
+                    {[
+                      { title: "Current Focus", desc: "Iron Condor on NIFTY/BANKNIFTY weekly expiry", color: "orange" },
+                      { title: "Risk Limit", desc: "Max 2% loss per trade, 3% loss per week", color: "purple" },
+                      { title: "Capital Deployment", desc: "70% in core strategy, 30% in experimental", color: "teal" },
+                    ].map((item, idx) => (
+                      <div key={idx} className={`p-3 rounded border-l-4 ${item.color === "orange" ? "bg-orange-50 border-orange-400" : item.color === "purple" ? "bg-purple-50 border-purple-400" : "bg-teal-50 border-teal-400"}`}>
+                        <p className="font-medium text-gray-900">{item.title}</p>
+                        <p className="text-gray-600 text-xs mt-1">{item.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }

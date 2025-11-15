@@ -19,7 +19,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const decoded = jwt.verify(token, SECRET) as MyJwtPayload; // ✅ typed payload
     const client = await clientPromise;
-    const db = client.db("trading");
+    const dbName = process.env.MONGODB_DB ?? "trading";
+    const db = client.db(dbName);
     const user = await db.collection("users").findOne({ _id: new ObjectId(decoded.userId) });
     if (!user) return res.status(401).json({ message: "Invalid user" });
 

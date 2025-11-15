@@ -20,24 +20,32 @@ export default function ProTradeListPage() {
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedTradeId, setExpandedTradeId] = useState<string | undefined>(undefined);
 
-  const monthOptions = Array.from({ length: 12 }, (_, i) => ({
-    label: new Date(0, i).toLocaleString("default", { month: "long" }),
-    value: i + 1,
-  }));
+  const monthOptions = [
+    { label: "All Months", value: 0 },
+    ...Array.from({ length: 12 }, (_, i) => ({
+      label: new Date(0, i).toLocaleString("default", { month: "long" }),
+      value: i + 1,
+    })),
+  ];
 
   const yearOptions = Array.from({ length: 4 }, (_, i) => today.getFullYear() + i);
 
   const fetchTrades = async () => {
     try {
       setLoading(true);
+
       const query = new URLSearchParams({
         page: currentPage.toString(),
         limit: rowsPerPage.toString(),
         status: statusFilter,
-        month: selectedMonth.toString().padStart(2, "0"),
         year: selectedYear.toString(),
       });
+      // Only add month if not 'All Months'
+      if (selectedMonth !== 0) {
+        query.append("month", selectedMonth.toString().padStart(2, "0"));
+      }
 
       const res = await fetch(`/api/trades?${query.toString()}`, {
         cache: "no-store"
@@ -45,6 +53,8 @@ export default function ProTradeListPage() {
       if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
 
       const data = await res.json();
+
+      console.log("Fetched trades:", data);
 
       setTrades(data.data || []);
       setTotalPages(data.totalPages || 1); // store total pages from API
@@ -59,7 +69,10 @@ export default function ProTradeListPage() {
 
   useEffect(() => {
     fetchTrades();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, statusFilter, selectedMonth, selectedYear, rowsPerPage]);
+
+
 
   const calculateMaxLoss = (trade: Trade) => {
     if (!trade.capital_deployed) return 0;
@@ -70,6 +83,20 @@ export default function ProTradeListPage() {
     if (!trade.capital_deployed) return 0;
     return trade.capital_deployed * 0.02; // 2% of capital
   };
+
+  // Calculate days in trade from entry and exit dates
+  const calculateDaysInTrade = (trade: Trade) => {
+    if (!trade.date) return "—";
+    const entryDate = new Date(trade.date);
+    // Prefer trade_exit_date if present, else use today
+    const exitDate = trade.trade_exit_date ? new Date(trade.trade_exit_date) : new Date();
+  // Calculate difference in days (rounded)
+  const diffTime = exitDate.getTime() - entryDate.getTime();
+  let diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) diffDays = 1;
+  return diffDays > 0 ? diffDays : "—";
+  };
+
 
   const formatDate = (value?: string) =>
     value ? new Date(value).toLocaleDateString() : "—";
@@ -236,6 +263,7 @@ export default function ProTradeListPage() {
           <table className="min-w-full text-sm table-fixed">
             <thead className="bg-white/90 sticky top-0 backdrop-blur-sm z-10">
               <tr>
+                <th className="px-3 py-2 text-center w-8">🔍</th>
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-left">Symbol</th>
                 <th className="px-3 py-2 text-left">Strategy</th>
@@ -245,6 +273,7 @@ export default function ProTradeListPage() {
                 <th className="px-3 py-2 text-right">Capital</th>
                 <th className="px-3 py-2 text-right">Premium</th>
                 <th className="px-3 py-2 text-right hidden md:table-cell">Lots</th>
+                <th className="px-3 py-2 text-right">Days in Trade</th>
                 <th className="px-3 py-2 text-right hidden xl:table-cell">Max Loss</th>
                 <th className="px-3 py-2 text-right hidden lg:table-cell">Max Profit</th>
                 <th className="px-3 py-2 text-right hidden xl:table-cell">Booked Profit</th>
@@ -258,7 +287,7 @@ export default function ProTradeListPage() {
             <tbody className="divide-y divide-gray-100">
               {!loading && trades.length === 0 && (
                 <tr>
-                  <td colSpan={17} className="text-center p-6 text-gray-400">
+                  <td colSpan={18} className="text-center p-6 text-gray-400">
                     No trades recorded
                   </td>
                 </tr>
@@ -266,71 +295,149 @@ export default function ProTradeListPage() {
 
               {trades.map((trade, idx) => {
                 const key = trade._id ?? idx;
+                const isExpanded = expandedTradeId === key;
                 return (
-                  <tr key={key} className="even:bg-gray-50 hover:bg-gray-100 transition">
-                    <td className="px-3 py-2">{formatDate(trade.date)}</td>
-                    <td className="px-3 py-2 font-medium">{trade.symbol || "—"}</td>
-                    <td className="px-3 py-2">{trade.strategy || "—"}</td>
-                    <td className="px-3 py-2 hidden sm:table-cell">{trade.view || "—"}</td>
-                    <td className="px-3 py-2 hidden lg:table-cell truncate max-w-[20rem]">
-                      {trade.entry_reason || "—"}
-                    </td>
-                    <td className="px-3 py-2 hidden lg:table-cell">{trade.entry_time || "—"}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(trade.capital_deployed)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(trade.premium_gain)}</td>
-                    <td className="px-3 py-2 text-right hidden md:table-cell">{trade.lots ?? "—"}</td>
-                    <td
-                      className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-red" : ""
-                        }`}
-                    >
-                      {formatCurrency(calculateMaxLoss(trade))}
-                    </td>
-                    <td
-                      className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-green" : ""
-                        }`}
-                    >
-                     {formatCurrency(calculateMaxProfit(trade))}
-                    </td>
-
-                    <td className="px-3 py-2 text-right hidden xl:table-cell">{formatCurrency(trade.profit_booked)}</td>
-                    <td className="px-3 py-2 text-right hidden xl:table-cell">{formatCurrency(trade.loss_booked)}</td>
-                    <td
-                      className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-yellow" : ""
-                        }`}
-                    >
-                      {calculateROI(trade).toFixed(2)}%
-                    </td>
-
-                    <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex items-center px-2 py-1 text-xs rounded font-medium ${trade.status === "OPEN"
-                          ? "bg-green-100 text-green-800"
-                          : trade.status === "CLOSED"
-                            ? "bg-gray-100 text-gray-800"
-                            : "bg-yellow-100 text-yellow-800"
-                          }`}
+                  <>
+                    <tr key={key} className="even:bg-gray-50 hover:bg-gray-100 transition">
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => setExpandedTradeId(isExpanded ? undefined : key as string)}
+                          className="text-blue-600 hover:text-blue-800 font-bold"
+                        >
+                          {isExpanded ? "▼" : "▶"}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2">{formatDate(trade.date)}</td>
+                      <td className="px-3 py-2 font-medium">{trade.symbol || "—"}</td>
+                      <td className="px-3 py-2">{trade.strategy || "—"}</td>
+                      <td className="px-3 py-2 hidden sm:table-cell">{trade.view || "—"}</td>
+                      <td className="px-3 py-2 hidden lg:table-cell truncate max-w-[20rem]">
+                        {trade.entry_reason || "—"}
+                      </td>
+                      <td className="px-3 py-2 hidden lg:table-cell">{trade.entry_time || "—"}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(trade.capital_deployed)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(trade.premium_gain)}</td>
+                      <td className="px-3 py-2 text-right hidden md:table-cell">{trade.lots ?? "—"}</td>
+                      <td className="px-3 py-2 text-right">{calculateDaysInTrade(trade)}</td>
+                      <td
+                        className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-red" : ""}`}
                       >
-                        {trade.status || "—"}
-                      </span>
-                    </td>
+                        {formatCurrency(calculateMaxLoss(trade))}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-green" : ""}`}
+                      >
+                        {formatCurrency(calculateMaxProfit(trade))}
+                      </td>
 
-                    <td className="px-3 py-2">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(trade._id)}
-                          className="px-2 py-1 bg-yellow-400 rounded text-white text-xs hover:bg-yellow-500 transition"
+                      <td className="px-3 py-2 text-right hidden xl:table-cell">{formatCurrency(trade.profit_booked)}</td>
+                      <td className="px-3 py-2 text-right hidden xl:table-cell">{formatCurrency(trade.loss_booked)}</td>
+                      <td
+                        className={`px-3 py-2 text-right hidden xl:table-cell font-semibold ${trade.status === "OPEN" ? "animate-pulse-bg-yellow" : ""}`}
+                      >
+                        {calculateROI(trade).toFixed(2)}%
+                      </td>
+
+                      <td className="px-3 py-2">
+                        <span
+                          className={`inline-flex items-center px-2 py-1 text-xs rounded font-medium ${trade.status === "OPEN"
+                            ? "bg-green-100 text-green-800"
+                            : trade.status === "CLOSED"
+                              ? "bg-gray-100 text-gray-800"
+                              : "bg-yellow-100 text-yellow-800"
+                            }`}
                         >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(trade._id)}
-                          className="px-2 py-1 bg-red-500 rounded text-white text-xs hover:bg-red-600 transition"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                          {trade.status || "—"}
+                        </span>
+                      </td>
+
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(trade._id)}
+                            className="px-2 py-1 bg-yellow-400 rounded text-white text-xs hover:bg-yellow-500 transition"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(trade._id)}
+                            className="px-2 py-1 bg-red-500 rounded text-white text-xs hover:bg-red-600 transition"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expanded Psychology Details Row */}
+                    {isExpanded && (
+                      <tr className="bg-blue-50 border-l-4 border-blue-600">
+                        <td colSpan={18} className="px-6 py-4">
+                          <div className="space-y-4">
+                            <h4 className="font-bold text-blue-900 mb-3">🧠 Psychology & Behavioral Insights</h4>
+                            
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                              {/* Pre-Trade Mindset */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">Pre-Trade Mindset</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.pre_trade_mindset || "—"}</p>
+                              </div>
+
+                              {/* Emotional State Entry */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">Emotions @ Entry</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.emotional_state_entry || "—"}</p>
+                              </div>
+
+                              {/* Confidence Level */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">Confidence Level</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.confidence_level ? `${trade.confidence_level}/10` : "—"}</p>
+                              </div>
+
+                              {/* FOMO/Fear */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">FOMO/Fear Indicator</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.fomo_fear || "—"}</p>
+                              </div>
+
+                              {/* Greed Indicator */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">Greed Level</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.greed_indicator || "—"}</p>
+                              </div>
+
+                              {/* Discipline Level */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">Discipline Level</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.discipline_level || "—"}</p>
+                              </div>
+
+                              {/* Trade Setup Conviction */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">Setup Conviction</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.trade_setup_conviction || "—"}</p>
+                              </div>
+
+                              {/* Emotional State Exit */}
+                              <div className="bg-white p-3 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold">Emotions @ Exit</p>
+                                <p className="text-sm text-gray-900 font-medium">{trade.emotional_state_exit || "—"}</p>
+                              </div>
+                            </div>
+
+                            {/* Behavioral Notes */}
+                            {trade.behavioral_notes && (
+                              <div className="bg-white p-4 rounded border border-blue-200">
+                                <p className="text-xs text-gray-600 font-semibold mb-2">Behavioral Notes</p>
+                                <p className="text-sm text-gray-700">{trade.behavioral_notes}</p>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 );
               })}
             </tbody>
@@ -395,4 +502,3 @@ export default function ProTradeListPage() {
     </div>
   );
 }
-

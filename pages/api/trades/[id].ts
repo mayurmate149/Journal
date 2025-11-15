@@ -4,7 +4,8 @@ import { ObjectId } from "mongodb";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const client = await clientPromise;
-  const db = client.db("trading");
+  const dbName = process.env.MONGODB_DB ?? "trading";
+  const db = client.db(dbName);
   const collection = db.collection("trades");
 
   const { id } = req.query;

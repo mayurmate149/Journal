@@ -27,6 +27,21 @@ export interface Trade {
   adjustment_notes: string;
   notes_learning: string;
   status: string;
-  lots: 0,
+  lots: number;
+  
+  // Behavioral & Psychology Tracker
+  pre_trade_mindset?: string;
+  emotional_state_entry?: string;
+  confidence_level?: number;
+  fomo_fear?: string;
+  greed_indicator?: string;
+  discipline_level?: string;
+  trade_setup_conviction?: string;
+  emotional_state_exit?: string;
+  behavioral_notes?: string;
 
+  // Compatibility for analytics
+  profitAmount?: number;
+  lossAmount?: number;
+  capitalDeployed?: number;
 }

@@ -51,6 +51,7 @@ export default function Header() {
           <nav className="flex items-center gap-4 text-sm">
             {navLink("/dashboard", "Dashboard")}
             {navLink("/trades/list", "Trades")}
+            {navLink("/capital", "Capital")}
 
             {/* Logout button */}
             <button

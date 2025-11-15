@@ -1,0 +1,11 @@
+<svg width="160" height="96" viewBox="0 0 160 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="160" height="96" fill="#fff"/>
+  <g stroke="#222" stroke-width="2">
+    <line x1="20" y1="80" x2="140" y2="80" />
+    <line x1="20" y1="80" x2="20" y2="20" />
+    <polyline points="20,20 140,80" fill="none" stroke="#d32f2f" stroke-width="3"/>
+  </g>
+  <text x="80" y="90" text-anchor="middle" font-size="12" fill="#444">Underlying Price →</text>
+  <text x="10" y="30" text-anchor="start" font-size="12" fill="#444" transform="rotate(-90 10,30)">Profit/Loss</text>
+  <text x="80" y="15" text-anchor="middle" font-size="14" fill="#d32f2f">Short Call</text>
+</svg>
